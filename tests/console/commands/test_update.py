@@ -100,3 +100,115 @@ def test_update_sync_option_is_passed_to_the_installer(
     tester.execute("--sync")
 
     assert tester.command.installer._requires_synchronization
+
+
+def test_update_with_valid_package_name(
+    poetry_with_outdated_lockfile: Poetry,
+    repo: TestRepository,
+    command_tester_factory: CommandTesterFactory,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Specifying a valid dependency should not raise an error.
+    """
+    tester = command_tester_factory("update", poetry=poetry_with_outdated_lockfile)
+    assert isinstance(tester.command, UpdateCommand)
+    mocker.patch.object(tester.command.installer, "run", return_value=0)
+
+    repo.add_package(get_package("docker", "4.3.1"))
+
+    status = tester.execute("docker")
+
+    assert status == 0
+    assert tester.io.fetch_error() == ""
+
+
+def test_update_with_non_normalized_package_name(
+    poetry_with_outdated_lockfile: Poetry,
+    repo: TestRepository,
+    command_tester_factory: CommandTesterFactory,
+    mocker: MockerFixture,
+) -> None:
+    """
+    Package names that differ only in normalization (e.g. 'Docker' vs 'docker')
+    should be accepted.
+    """
+    tester = command_tester_factory("update", poetry=poetry_with_outdated_lockfile)
+    assert isinstance(tester.command, UpdateCommand)
+    mocker.patch.object(tester.command.installer, "run", return_value=0)
+
+    repo.add_package(get_package("docker", "4.3.1"))
+
+    status = tester.execute("Docker")
+
+    assert status == 0
+    assert tester.io.fetch_error() == ""
+
+
+def test_update_with_invalid_package_name_shows_error(
+    poetry_with_outdated_lockfile: Poetry,
+    command_tester_factory: CommandTesterFactory,
+) -> None:
+    """
+    Providing non-existent package names should raise an error.
+    """
+    tester = command_tester_factory("update", poetry=poetry_with_outdated_lockfile)
+
+    status = tester.execute("nonexistent-package")
+
+    assert status == 1
+    assert (
+        "The following packages are not dependencies of this project: nonexistent-package"
+        in tester.io.fetch_error()
+    )
+
+
+def test_update_with_multiple_invalid_package_names_shows_error(
+    poetry_with_outdated_lockfile: Poetry,
+    command_tester_factory: CommandTesterFactory,
+) -> None:
+    """
+    Providing multiple non-existent package names should list all of them in the error.
+    """
+    tester = command_tester_factory("update", poetry=poetry_with_outdated_lockfile)
+
+    status = tester.execute("fake1 fake2 fake3")
+
+    assert status == 1
+    error = tester.io.fetch_error()
+    assert "The following packages are not dependencies of this project" in error
+    assert "fake1" in error
+    assert "fake2" in error
+    assert "fake3" in error
+
+
+@pytest.mark.parametrize(
+    "package_spec",
+    [
+        "docker==1.2.3",
+        "docker>=1.0,<2.0",
+        "docker!=1.0",
+        "docker[extra]>=1.0",
+        "nonexistent==1.2.3",
+        "nonexistent>=1.0",
+    ],
+)
+def test_update_with_version_specifier_raises_error(
+    package_spec: str,
+    poetry_with_outdated_lockfile: Poetry,
+    command_tester_factory: CommandTesterFactory,
+) -> None:
+    """
+    The update command only accepts bare package names. Passing requirement
+    strings with version specifiers should raise a clear error pointing
+    to poetry add, regardless of whether the package is a dependency.
+    """
+    tester = command_tester_factory("update", poetry=poetry_with_outdated_lockfile)
+
+    status = tester.execute(package_spec)
+
+    assert status == 1
+    error = tester.io.fetch_error()
+    assert "Version specifiers are not allowed" in error
+    assert "poetry update" in error
+    assert "poetry add" in error
