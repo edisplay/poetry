@@ -13,6 +13,7 @@ from packaging.utils import canonicalize_name
 
 from poetry.console.commands.env_command import EnvCommand
 from poetry.console.commands.group_command import GroupCommand
+from poetry.utils.constants import POETRY_SYSTEM_PROJECT_NAME
 
 
 if TYPE_CHECKING:
@@ -147,8 +148,8 @@ lists all packages available."""
 
         if not self.poetry.locker.is_locked():
             self.line_error(
-                "<error>Error: poetry.lock not found. Run `poetry lock` to create"
-                " it.</error>"
+                f"<error>Error: poetry.lock not found. Run `{self._lock_create_command()}`"
+                " to create it.</error>"
             )
             return 1
 
@@ -164,6 +165,12 @@ lists all packages available."""
             return self._display_packages_tree_information(locked_repo, root)
 
         return self._display_packages_information(locked_repo, root)
+
+    def _lock_create_command(self) -> str:
+        if self.poetry.package.name == POETRY_SYSTEM_PROJECT_NAME:
+            return "poetry self lock"
+
+        return "poetry lock"
 
     def _display_single_package_information(
         self, package: str, locked_repository: Repository
